@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: antrea
+  namespace: $NAMESPACE
+  labels:
+    app: antrea
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k3s-apiserver
+  namespace: $NAMESPACE
+  labels:
+    app: k3s-apiserver
+spec:
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 8443
+  selector:
+    app: antrea
+    component: k3s-apiserver
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: antrea-k3s-server
+  namespace: $NAMESPACE
+  labels:
+    app: antrea
+    component: k3s-apiserver
+spec:
+  strategy:
+    # Ensure the existing Pod is stopped before the new one is created.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: antrea
+      component: k3s-apiserver
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: antrea
+        component: k3s-apiserver
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      priorityClassName: system-cluster-critical
+      serviceAccountName: antrea
+      containers:
+         - name: k3s-server
+           image: rancher/k3s:latest
+           imagePullPolicy: IfNotPresent
+           args:
+             - "server"
+             - "--data-dir=/var/run/k3s-data/"
+             - "--disable-agent"
+             - "--disable-scheduler"
+             - "--disable-cloud-controller"
+             - "--disable-controller-manager"
+             - "--disable-kube-proxy"
+             - "--disable-network-policy"
+             - "--disable-helm-controller"
+             - "--disable=coredns,servicelb,traefik,metrics-server"
+             - "--log=/var/log/antrea/k3s"
+             - "--https-listen-port=8443"
+           ports:
+             - containerPort: 8443
+           securityContext:
+              privileged: true
+           volumeMounts:
+             - name: host-k3s-data
+               mountPath: /var/run/k3s-data
+             - name: host-var-log-antrea
+               mountPath: /var/log/antrea
+             - name: k3s-ca
+               mountPath: /var/run/k3s-data/server/tls/server-ca.crt
+               subPath: server-ca.crt
+             - name: k3s-ca
+               mountPath: /var/run/k3s-data/server/tls/server-ca.key
+               subPath: server-ca.key
+             - name: k3s-ca
+               mountPath: /var/run/k3s-data/server/tls/client-ca.crt
+               subPath: client-ca.crt
+             - name: k3s-ca
+               mountPath: /var/run/k3s-data/server/tls/client-ca.key
+               subPath: client-ca.key
+      volumes:
+        - name: host-k3s-data
+          hostPath:
+            path: /var/run/antrea/k3s-data
+            type: DirectoryOrCreate
+        - name: k3s-ca
+          projected:
+            sources:
+              - secret:
+                  name: server-ca-secret
+                  items:
+                    - key: tls.crt
+                      path: server-ca.crt
+                      mode: 0644
+                    - key: tls.key
+                      path: server-ca.key
+                      mode: 0644
+              - secret:
+                  name: client-ca-secret
+                  items:
+                    - key: tls.crt
+                      path: client-ca.crt
+                      mode: 0644
+                    - key: tls.key
+                      path: client-ca.key
+                      mode: 0644
+        - name: host-var-log-antrea
+          hostPath:
+            path: /var/log/antrea
+            type: DirectoryOrCreate

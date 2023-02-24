@@ -1,0 +1,116 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: nephe-controller
+  name: nephe-controller
+  namespace: nephe-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: nephe-controller
+  template:
+    metadata:
+      labels:
+        control-plane: nephe-controller
+    spec:
+      containers:
+      - args:
+        - --enable-debug-log
+        command:
+        - /nephe-controller
+        image: projects.registry.vmware.com/antrea/nephe:latest
+        imagePullPolicy: IfNotPresent
+        name: nephe-controller
+        env:
+        - name: KUBECONFIG
+          value: /tmp/kubeconfig/k3s.kubeconfig 
+        ports:
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2000Mi
+          requests:
+            cpu: 200m
+            memory: 500Mi
+        volumeMounts:
+        - mountPath: /tmp/k3s-tls/
+          name: antrea-apiserver-tls
+          readOnly: true
+        - mountPath: /tmp/kubeconfig/k3s.kubeconfig
+          subPath: k3s.kubeconfig
+          name: apiserver-kubeconfig-configmap
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: antrea-apiserver-tls
+          readOnly: true
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: antrea-apiserver-tls
+        projected:
+          sources:
+            - secret:
+                name: server-ca-secret
+                items:
+                  - key: tls.crt
+                    path: ca.crt
+                    mode: 0644
+            - secret:
+                name: k3s-nephe-controller-tls-secret
+                items:
+                  - key: tls.crt
+                    path: tls.crt
+                    mode: 0644
+                  - key: tls.key
+                    path: tls.key
+                    mode: 0644
+      - name: apiserver-kubeconfig-configmap
+        configMap:
+          name: apiserver-kubeconfig-configmap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apiserver-kubeconfig-configmap
+  namespace: nephe-system
+data:
+  k3s.kubeconfig: |
+    apiVersion: v1
+    clusters:
+    - cluster:
+        server: https://antrea-apiserver.nephe-system.svc.cluster.local
+        certificate-authority: /tmp/k3s-tls/ca.crt
+      name: local
+    contexts:
+    - context:
+        cluster: local
+        user: user
+        namespace: default
+      name: Default
+    current-context: Default
+    kind: Config
+    preferences: {}
+    users:
+    - name: user
+      user:
+        client-certificate: /tmp/k3s-tls/tls.crt
+        client-key: /tmp/k3s-tls/tls.key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+  name: nephe-controller-service
+  namespace: nephe-system
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 5443
+  type: ClusterIP
+  selector:
+    control-plane: nephe-controller

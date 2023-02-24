@@ -1,0 +1,37 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: antrea-controller-serving-cert
+  namespace: antrea-test
+spec:
+  # Secret names are always required.
+  secretName: antrea-controller-tls
+
+  secretTemplate:
+    labels:
+      app: antrea
+
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+      - system:masters
+  # The use of the common name field has been deprecated since 2000 and is
+  # discouraged from being used.
+  commonName: antrea-controller
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - client auth
+  # At least one of a DNS Name, URI, or IP address is required.
+  dnsNames:
+    - antrea.antrea-test.svc.cluster.local
+    - antrea.antrea-test.svc
+  # Issuer references are always required.
+  issuerRef:
+    name: server-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
