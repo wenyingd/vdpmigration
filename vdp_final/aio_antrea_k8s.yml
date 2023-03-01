@@ -1,0 +1,414 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: k3s-antrea-controller-tls
+spec:
+  # Secret names are always required.
+  secretName: k3s-antrea-controller-tls-secret
+
+  secretTemplate:
+    labels:
+      app: antrea
+
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+      - system:masters
+  # The use of the common name field has been deprecated since 2000 and is
+  # discouraged from being used.
+  commonName: antrea-controller
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - client auth
+  # At least one of a DNS Name, URI, or IP address is required.
+  dnsNames:
+    - k3s-apiserver.nsxaas-antreapoc-antrea-test.svc.cluster.local
+    - k3s-apiserver.nsxaas-antreapoc-antrea-test.svc
+  # Issuer references are always required.
+  issuerRef:
+    name: client-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: antrea-controller-serving-cert
+spec:
+  # Secret names are always required.
+  secretName: antrea-controller-tls
+
+  secretTemplate:
+    labels:
+      app: antrea
+
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+      - system:masters
+  # The use of the common name field has been deprecated since 2000 and is
+  # discouraged from being used.
+  commonName: antrea
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  # At least one of a DNS Name, URI, or IP address is required.
+  dnsNames:
+    - antrea.kube-system.svc.cluster.local
+    - antrea.kube-system.svc
+  # Issuer references are always required.
+  issuerRef:
+    name: server-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: antrea-k3s-kubeconfig-configmap
+data:
+  k3s.kubeconfig: |
+    apiVersion: v1
+    clusters:
+    - cluster:
+        server: https://k3s-apiserver.nsxaas-antreapoc-antrea-test.svc.cluster.local
+        certificate-authority: /var/run/antrea/apiserver/tls/server-ca.crt
+      name: local
+    contexts:
+    - context:
+        cluster: local
+        user: user
+        namespace: default
+      name: Default
+    current-context: Default
+    kind: Config
+    preferences: {}
+    users:
+    - name: user
+      user:
+        client-certificate: /var/run/antrea/apiserver/tls/client.crt
+        client-key: /var/run/antrea/apiserver/tls/client.key
+---
+# Source: antrea/templates/controller/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: antrea-controller
+  labels:
+    app: antrea
+---
+# Source: antrea/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: antrea-config
+  labels:
+    app: antrea
+data:
+  antrea-controller.conf: |
+    # FeatureGates is a map of feature names to bools that enable or disable experimental features.
+    featureGates:
+    # AllAlpha is a global toggle for alpha features. Per-feature key values override the default set by AllAlpha.
+    #  AllAlpha: false
+
+    # AllBeta is a global toggle for beta features. Per-feature key values override the default set by AllBeta.
+    #  AllBeta: false
+
+    # Enable traceflow which provides packet tracing feature to diagnose network issue.
+    #  Traceflow: true
+
+    # Enable Antrea ClusterNetworkPolicy feature to complement K8s NetworkPolicy for cluster admins
+    # to define security policies which apply to the entire cluster, and Antrea NetworkPolicy
+    # feature that supports priorities, rule actions and externalEntities in the future.
+    #  AntreaPolicy: true
+
+    # Enable collecting and exposing NetworkPolicy statistics.
+    #  NetworkPolicyStats: true
+
+    # Enable multicast traffic.
+    #  Multicast: false
+
+    # Enable controlling SNAT IPs of Pod egress traffic.
+    #  Egress: true
+
+    # Run Kubernetes NodeIPAMController with Antrea.
+    #  NodeIPAM: false
+
+    # Enable AntreaIPAM, which can allocate IP addresses from IPPools. AntreaIPAM is required by the
+    # bridging mode and allocates IPs to Pods in bridging mode. It is also required to use Antrea for
+    # IPAM when configuring secondary network interfaces with Multus.
+    #  AntreaIPAM: false
+
+    # Enable managing external IPs of Services of LoadBalancer type.
+    #  ServiceExternalIP: false
+
+    # Enable certificated-based authentication for IPsec.
+    #  IPsecCertAuth: false
+
+    # Enable managing ExternalNode for unmanaged VM/BM.
+    #  ExternalNode: false
+
+    # Enable collecting support bundle files with SupportBundleCollection CRD.
+    #  SupportBundleCollection: false
+
+    # Enable Antrea Multi-cluster features.
+    #  Multicluster: false
+
+    # Enable users to protect their applications by specifying how they are allowed to communicate with others, taking
+    # into account application context.
+    #  L7NetworkPolicy: false
+
+    # The port for the antrea-controller APIServer to serve on.
+    # Note that if it's set to another value, the `containerPort` of the `api` port of the
+    # `antrea-controller` container must be set to the same value.
+    apiPort: 10449
+
+    # Enable metrics exposure via Prometheus. Initializes Prometheus metrics listener.
+    enablePrometheusMetrics: true
+
+    # Indicates whether to use auto-generated self-signed TLS certificate.
+    # If false, a Secret named "antrea-controller-tls" must be provided with the following keys:
+    #   ca.crt: <CA certificate>
+    #   tls.crt: <TLS certificate>
+    #   tls.key: <TLS private key>
+    selfSignedCert: false
+
+    # Comma-separated list of Cipher Suites. If omitted, the default Go Cipher Suites will be used.
+    # https://golang.org/pkg/crypto/tls/#pkg-constants
+    # Note that TLS1.3 Cipher Suites cannot be added to the list. But the apiserver will always
+    # prefer TLS1.3 Cipher Suites whenever possible.
+    tlsCipherSuites: ""
+
+    # TLS min version from: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13.
+    tlsMinVersion: ""
+
+    nodeIPAM:
+      # Enable the integrated Node IPAM controller within the Antrea controller.
+      enableNodeIPAM: false
+      # CIDR ranges for Pods in cluster. String array containing single CIDR range, or multiple ranges.
+      # The CIDRs could be either IPv4 or IPv6. At most one CIDR may be specified for each IP family.
+      # Value ignored when enableNodeIPAM is false.
+      clusterCIDRs:
+      # CIDR ranges for Services in cluster. It is not necessary to specify it when there is no overlap with clusterCIDRs.
+      # Value ignored when enableNodeIPAM is false.
+      serviceCIDR: ""
+      serviceCIDRv6: ""
+      # Mask size for IPv4 Node CIDR in IPv4 or dual-stack cluster. Value ignored when enableNodeIPAM is false
+      # or when IPv4 Pod CIDR is not configured. Valid range is 16 to 30.
+      nodeCIDRMaskSizeIPv4: 24
+      # Mask size for IPv6 Node CIDR in IPv6 or dual-stack cluster. Value ignored when enableNodeIPAM is false
+      # or when IPv6 Pod CIDR is not configured. Valid range is 64 to 126.
+      nodeCIDRMaskSizeIPv6: 64
+
+    ipsecCSRSigner:
+      # Determines the auto-approve policy of Antrea CSR signer for IPsec certificates management.
+      # If enabled, Antrea will auto-approve the CertificateSingingRequest (CSR) if its subject and x509 extensions
+      # are permitted, and the requestor can be validated. If K8s `BoundServiceAccountTokenVolume` feature is enabled,
+      # the Pod identity will also be validated to provide maximum security.
+      # If set to false, Antrea will not auto-approve CertificateSingingRequests and they need to be approved
+      # manually by `kubectl certificate approve`.
+      autoApprove: true
+      # Indicates whether to use auto-generated self-signed CA certificate.
+      # If false, a Secret named "antrea-ipsec-ca" must be provided with the following keys:
+      #   tls.crt: <CA certificate>
+      #   tls.key: <CA private key>
+      selfSignedCA: true
+
+    multicluster:
+      # Enable Multi-cluster NetworkPolicy.
+      enableStretchedNetworkPolicy: false
+
+    clientConnection:
+      kubeconfig: /var/run/antrea/apiserver/k3s.kubeconfig
+---
+# Source: antrea/templates/controller/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: antrea
+  labels:
+    app: antrea
+spec:
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 10449
+  selector:
+    app: antrea
+    component: antrea-controller
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: antrea-log
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: gp3
+---
+# Source: antrea/templates/controller/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: antrea-controller
+  labels:
+    app: antrea
+    component: antrea-controller
+spec:
+  strategy:
+    # Ensure the existing Pod is stopped before the new one is created.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: antrea
+      component: antrea-controller
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        # Automatically restart Pod if the ConfigMap changes
+        # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
+        checksum/config: b4c3fded51a0a9d758280128d5b42fa5a1aa3d3cb6c5d672b04b1548f5774a08
+      labels:
+        app: antrea
+        component: antrea-controller
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+      serviceAccountName: antrea-controller
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 2000
+      containers:
+        - name: antrea-controller
+          image: projects.registry.vmware.com/antreaas_poc/antrea-ubuntu:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 200m
+          command: ["antrea-controller"]
+          # Log to both "/var/log/antrea/" and stderr (so "kubectl logs" can work).
+          args:
+            - "--config=/etc/antrea/antrea-controller.conf"
+            - "--logtostderr=false"
+            - "--log_dir=/var/log/antrea"
+            - "--alsologtostderr"
+            - "--log_file_max_size=100"
+            - "--log_file_max_num=4"
+          env:
+            # Provide pod and node information for clusterinformation CRD.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # Provide ServiceAccount name for validation webhook.
+            - name: SERVICEACCOUNT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
+            - name: ANTREA_CONFIG_MAP_NAME
+              value: antrea-config
+          ports:
+            - containerPort: 10449
+              name: api
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 10449
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 10449
+              scheme: HTTPS
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 5
+          volumeMounts:
+            - name: antrea-config
+              mountPath: /etc/antrea/antrea-controller.conf
+              subPath: antrea-controller.conf
+              readOnly: true
+            - name: antrea-controller-tls
+              mountPath: /var/run/antrea/antrea-controller-tls
+            - name: host-var-log-antrea
+              mountPath: /var/log/antrea
+            - name: k3s-kubeconfig
+              mountPath: /var/run/antrea/apiserver/k3s.kubeconfig
+              subPath: k3s.kubeconfig
+              readOnly: true
+            - name: antrea-k3s-apiserver-tls
+              mountPath: /var/run/antrea/apiserver/tls
+            - name: antrea-apiserver-run
+              mountPath: /var/run/antrea/apiserver
+      volumes:
+        - name: antrea-config
+          configMap:
+            name: antrea-config
+        # Make it optional as we only read it when selfSignedCert=false.
+        - name: antrea-controller-tls
+          secret:
+            secretName: antrea-controller-tls
+            defaultMode: 0400
+            optional: true
+        - name: host-var-log-antrea
+          persistentVolumeClaim:
+            claimName: antrea-log
+        - name: antrea-apiserver-run
+          emptyDir:
+            sizeLimit: 10Mi
+        - name: k3s-kubeconfig
+          configMap:
+            name: antrea-k3s-kubeconfig-configmap
+        - name: antrea-k3s-apiserver-tls
+          projected:
+            sources:
+              - secret:
+                  name: server-ca-secret
+                  items:
+                     - key: tls.crt
+                       path: server-ca.crt
+                       mode: 0644
+              - secret:
+                  name: k3s-antrea-controller-tls-secret
+                  items:
+                    - key: tls.crt
+                      path: client.crt
+                      mode: 0644
+                    - key: tls.key
+                      path: client.key
+                      mode: 0644
+---

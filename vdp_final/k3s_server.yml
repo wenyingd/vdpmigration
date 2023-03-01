@@ -1,0 +1,127 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: k3s-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: gp3
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: antrea
+  labels:
+    app: antrea
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k3s-apiserver
+  labels:
+    app: k3s-apiserver
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 10443
+  selector:
+    app: antrea
+    component: k3s-apiserver
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: antrea-k3s-server
+  labels:
+    app: antrea
+    component: k3s-apiserver
+spec:
+  strategy:
+    # Ensure the existing Pod is stopped before the new one is created.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: antrea
+      component: k3s-apiserver
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: antrea
+        component: k3s-apiserver
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      serviceAccountName: antrea
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 2000
+      containers:
+         - name: k3s-server
+           image: projects.registry.vmware.com/antreaas_poc/k3s:latest
+           imagePullPolicy: IfNotPresent
+           args:
+             - "server"
+             - "--data-dir=/k3s-data/"
+             - "--disable-agent"
+             - "--disable-scheduler"
+             - "--disable-cloud-controller"
+             - "--disable-controller-manager"
+             - "--disable-kube-proxy"
+             - "--disable-network-policy"
+             - "--disable-helm-controller"
+             - "--disable=coredns,servicelb,traefik,metrics-server"
+             - "--alsologtostderr"
+             - "--https-listen-port=10443"
+             - "--rootless"
+           ports:
+             - containerPort: 8443
+           env:
+             - name: HOME
+               value: /k3s-data
+           securityContext:
+             privileged: false
+           volumeMounts:
+             - name: k3s-ca
+               mountPath: /k3s-data/server/tls/server-ca.crt
+               subPath: server-ca.crt
+             - name: k3s-ca
+               mountPath: /k3s-data/server/tls/server-ca.key
+               subPath: server-ca.key
+             - name: k3s-ca
+               mountPath: /k3s-data/server/tls/client-ca.crt
+               subPath: client-ca.crt
+             - name: k3s-ca
+               mountPath: /k3s-data/server/tls/client-ca.key
+               subPath: client-ca.key
+             - name: k3s-storage
+               mountPath: /k3s-data
+      volumes:
+        - name: k3s-storage
+          persistentVolumeClaim:
+            claimName: k3s-storage
+        - name: k3s-ca
+          projected:
+            defaultMode: 420
+            sources:
+              - secret:
+                  name: server-ca-secret
+                  items:
+                    - key: tls.crt
+                      path: server-ca.crt
+                    - key: tls.key
+                      path: server-ca.key
+              - secret:
+                  name: client-ca-secret
+                  items:
+                    - key: tls.crt
+                      path: client-ca.crt
+                    - key: tls.key
+                      path: client-ca.key

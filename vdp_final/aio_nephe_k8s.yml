@@ -1,0 +1,193 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: k3s-nephe-controller-tls
+spec:
+  # Secret names are always required.
+  secretName: k3s-nephe-controller-tls-secret
+
+  secretTemplate:
+    labels:
+      app: antrea
+
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+      - system:masters
+  # The use of the common name field has been deprecated since 2000 and is
+  # discouraged from being used.
+  commonName: nephe-controller
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - client auth
+  # At least one of a DNS Name, URI, or IP address is required.
+  dnsNames:
+    - k3s-apiserver.nsxaas-antreapoc-antrea-test.svc.cluster.local
+    - k3s-apiserver.nsxaas-antreapoc-antrea-test.svc
+  # Issuer references are always required.
+  issuerRef:
+    name: client-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nephe-controller-serving-auth
+spec:
+  # Secret names are always required.
+  secretName: nephe-controller-serving-secret
+  secretTemplate:
+    labels:
+      app: nephe
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+      - system:masters
+  # The use of the common name field has been deprecated since 2000 and is
+  # discouraged from being used.
+  commonName: nephe-controller
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  # At least one of a DNS Name, URI, or IP address is required.
+  dnsNames:
+    - nephe-controller-service.nephe-system.svc.cluster.local
+    - nephe-controller-service.nephe-system.svc
+  # Issuer references are always required.
+  issuerRef:
+    name: server-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: nephe-controller
+  name: nephe-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: nephe-controller
+  template:
+    metadata:
+      labels:
+        control-plane: nephe-controller
+    spec:
+      containers:
+      - args:
+        - --enable-debug-log
+        command:
+        - /nephe-controller
+        image: projects.registry.vmware.com/antreaas_poc/nephe:latest
+        imagePullPolicy: IfNotPresent
+        name: nephe-controller
+        env:
+        - name: KUBECONFIG
+          value: /tmp/kubeconfig/k3s.kubeconfig 
+        ports:
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2000Mi
+          requests:
+            cpu: 200m
+            memory: 500Mi
+        volumeMounts:
+        - mountPath: /tmp/k3s-tls/
+          name: k3s-nephe-tls
+          readOnly: true
+        - mountPath: /tmp/kubeconfig/k3s.kubeconfig
+          subPath: k3s.kubeconfig
+          name: nephe-k3s-kubeconfig-configmap
+        - mountPath: /tmp/k8s-apiserver/serving-certs
+          name: nephe-controller-tls
+          readOnly: true
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: nephe-controller-tls
+          readOnly: true
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: nephe-controller-tls
+        secret:
+          defaultMode: 420
+          secretName: nephe-controller-serving-secret
+      - name: k3s-nephe-tls
+        projected:
+          sources:
+            - secret:
+                name: server-ca-secret
+                items:
+                  - key: tls.crt
+                    path: ca.crt
+                    mode: 0644
+            - secret:
+                name: k3s-nephe-controller-tls-secret
+                items:
+                  - key: tls.crt
+                    path: tls.crt
+                    mode: 0644
+                  - key: tls.key
+                    path: tls.key
+                    mode: 0644
+      - name: nephe-k3s-kubeconfig-configmap
+        configMap:
+          name: nephe-k3s-kubeconfig-configmap
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nephe-k3s-kubeconfig-configmap
+data:
+  k3s.kubeconfig: |
+    apiVersion: v1
+    clusters:
+    - cluster:
+        server: https://k3s-apiserver.nsxaas-antreapoc-antrea-test.svc.cluster.local
+        certificate-authority: /tmp/k3s-tls/ca.crt
+      name: local
+    contexts:
+    - context:
+        cluster: local
+        user: user
+      name: Default
+    current-context: Default
+    kind: Config
+    preferences: {}
+    users:
+    - name: user
+      user:
+        client-certificate: /tmp/k3s-tls/tls.crt
+        client-key: /tmp/k3s-tls/tls.key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+  name: nephe-controller-service
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 5443
+  type: ClusterIP
+  selector:
+    control-plane: nephe-controller

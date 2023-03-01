@@ -1,0 +1,46 @@
+kind: Certificate
+metadata:
+  name: server-ca
+spec:
+  isCA: true
+  commonName: server-ca
+  secretName: server-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: cluster-issuer-tls
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: server-ca-issuer
+spec:
+  ca:
+    secretName: server-ca-secret
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: client-ca
+spec:
+  isCA: true
+  commonName: client-ca
+  secretName: client-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: cluster-issuer-tls
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: client-ca-issuer
+spec:
+  ca:
+    secretName: client-ca-secret
