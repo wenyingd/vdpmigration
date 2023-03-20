@@ -27,8 +27,8 @@ spec:
     - client auth
   # At least one of a DNS Name, URI, or IP address is required.
   dnsNames:
-    - k3s-apiserver.nsxaas-antreapoc-antrea-test.svc.cluster.local
-    - k3s-apiserver.nsxaas-antreapoc-antrea-test.svc
+    - k3s-apiserver.nsxaas-antreatest-poc.svc.cluster.local
+    - k3s-apiserver.nsxaas-antreatest-poc.svc
   # Issuer references are always required.
   issuerRef:
     name: client-ca-issuer
@@ -83,7 +83,7 @@ data:
     apiVersion: v1
     clusters:
     - cluster:
-        server: https://k3s-apiserver.nsxaas-antreapoc-antrea-test.svc.cluster.local
+        server: https://k3s-apiserver.nsxaas-antreatest-poc.svc.cluster.local
         certificate-authority: /var/run/antrea/apiserver/tls/server-ca.crt
       name: local
     contexts:

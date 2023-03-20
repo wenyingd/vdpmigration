@@ -3067,7 +3067,7 @@ metadata:
   namespace: kube-system
 subsets:
 - addresses:
-  - ip: $ANTREA_SERVICE_IP
+  - ip: 100.64.196.133
   ports:
   - port: 443
     protocol: TCP

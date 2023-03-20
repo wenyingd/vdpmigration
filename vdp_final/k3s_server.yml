@@ -80,9 +80,8 @@ spec:
              - "--disable=coredns,servicelb,traefik,metrics-server"
              - "--alsologtostderr"
              - "--https-listen-port=10443"
-             - "--rootless"
            ports:
-             - containerPort: 8443
+             - containerPort: 10443
            env:
              - name: HOME
                value: /k3s-data
@@ -103,7 +102,12 @@ spec:
                subPath: client-ca.key
              - name: k3s-storage
                mountPath: /k3s-data
+             - name: etc-rancher
+               mountPath: /etc/rancher
       volumes:
+        - name: etc-rancher
+          emptyDir:
+            sizeLimit: 100Mi
         - name: k3s-storage
           persistentVolumeClaim:
             claimName: k3s-storage
