@@ -31,7 +31,7 @@ spec:
     - k3s-apiserver.nsxaas-antreatest-poc.svc
   # Issuer references are always required.
   issuerRef:
-    name: client-ca-issuer
+    name: server-ca-issuer
     kind: Issuer
     group: cert-manager.io
 ---

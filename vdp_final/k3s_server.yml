@@ -123,7 +123,7 @@ spec:
                     - key: tls.key
                       path: server-ca.key
               - secret:
-                  name: client-ca-secret
+                  name: server-ca-secret
                   items:
                     - key: tls.crt
                       path: client-ca.crt
